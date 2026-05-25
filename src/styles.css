@@ -441,6 +441,21 @@ textarea:focus {
   font-size: 22px;
 }
 
+.cloud-form,
+.cloud-actions {
+  display: grid;
+  gap: 9px;
+}
+
+.cloud-actions {
+  margin-top: 10px;
+}
+
+.cloud-actions .primary-button,
+.cloud-actions .secondary-button {
+  width: 100%;
+}
+
 .fun-composer {
   grid-template-columns: minmax(0, 1fr) 180px auto;
   margin-bottom: 16px;

@@ -93,10 +93,18 @@ type KaiData = FocusData & {
   entertainment: EntertainmentItem[];
 };
 
+type SyncConfig = {
+  token: string;
+  gistId: string;
+  fileName: string;
+};
+
 const storageKey = "kaidesk-data-v1";
+const syncConfigKey = "kaidesk-sync-config-v1";
 const legacyKeys = ["kai-focus-data-v4", "kai-focus-data-v3", "kai-focus-data-v2", "kai-focus-data-v1"];
 const defaultExamDate = "2026-12-20";
 const appBase = import.meta.env.BASE_URL;
+const defaultSyncFileName = "kaidesk-data.json";
 const taskScopeLabels: Record<TaskScope, string> = {
   today: "今日",
   recent: "近期",
@@ -143,6 +151,12 @@ const defaultData: KaiData = {
   settings: {
     examDate: defaultExamDate,
   },
+};
+
+const defaultSyncConfig: SyncConfig = {
+  token: "",
+  gistId: "",
+  fileName: defaultSyncFileName,
 };
 
 const createId = () => crypto.randomUUID();
@@ -214,30 +228,34 @@ function readStoredData() {
   return null;
 }
 
+function normalizeKaiData(parsed: Partial<KaiData>): KaiData {
+  return {
+    sessions: Array.isArray(parsed.sessions)
+      ? parsed.sessions.map(normalizeSession).filter((session): session is FocusSession => Boolean(session))
+      : [],
+    progress: Array.isArray(parsed.progress)
+      ? parsed.progress.map(normalizeProgress).filter((entry): entry is ProgressEntry => Boolean(entry))
+      : [],
+    tasks: Array.isArray(parsed.tasks)
+      ? parsed.tasks.map(normalizeTask).filter((task): task is TaskItem => Boolean(task))
+      : [],
+    entertainment: Array.isArray(parsed.entertainment)
+      ? parsed.entertainment
+          .map(normalizeEntertainment)
+          .filter((item): item is EntertainmentItem => Boolean(item))
+      : [],
+    settings: {
+      examDate: parsed.settings?.examDate || defaultExamDate,
+    },
+  };
+}
+
 function loadData(): KaiData {
   const raw = readStoredData();
   if (!raw) return defaultData;
   try {
     const parsed = JSON.parse(raw) as Partial<KaiData>;
-    return {
-      sessions: Array.isArray(parsed.sessions)
-        ? parsed.sessions.map(normalizeSession).filter((session): session is FocusSession => Boolean(session))
-        : [],
-      progress: Array.isArray(parsed.progress)
-        ? parsed.progress.map(normalizeProgress).filter((entry): entry is ProgressEntry => Boolean(entry))
-        : [],
-      tasks: Array.isArray(parsed.tasks)
-        ? parsed.tasks.map(normalizeTask).filter((task): task is TaskItem => Boolean(task))
-        : [],
-      entertainment: Array.isArray(parsed.entertainment)
-        ? parsed.entertainment
-            .map(normalizeEntertainment)
-            .filter((item): item is EntertainmentItem => Boolean(item))
-        : [],
-      settings: {
-        examDate: parsed.settings?.examDate || defaultExamDate,
-      },
-    };
+    return normalizeKaiData(parsed);
   } catch {
     return defaultData;
   }
@@ -245,6 +263,25 @@ function loadData(): KaiData {
 
 function saveData(data: KaiData) {
   localStorage.setItem(storageKey, JSON.stringify(data));
+}
+
+function loadSyncConfig(): SyncConfig {
+  const raw = localStorage.getItem(syncConfigKey);
+  if (!raw) return defaultSyncConfig;
+  try {
+    const parsed = JSON.parse(raw) as Partial<SyncConfig>;
+    return {
+      token: parsed.token || "",
+      gistId: parsed.gistId || "",
+      fileName: parsed.fileName || defaultSyncFileName,
+    };
+  } catch {
+    return defaultSyncConfig;
+  }
+}
+
+function saveSyncConfig(config: SyncConfig) {
+  localStorage.setItem(syncConfigKey, JSON.stringify(config));
 }
 
 function formatDuration(seconds: number) {
@@ -365,6 +402,7 @@ function buildCodexSummary(data: KaiData) {
 
 export function App() {
   const [data, setData] = useState<KaiData>(() => loadData());
+  const [syncConfig, setSyncConfig] = useState<SyncConfig>(() => loadSyncConfig());
   const [activeSection, setActiveSection] = useState<ActiveSection>(() => sectionFromPath());
   const [running, setRunning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -376,11 +414,18 @@ export function App() {
   const [taskDraft, setTaskDraft] = useState({ title: "", scope: "today" as TaskScope, dueDate: "" });
   const [funDraft, setFunDraft] = useState({ title: "", kind: "电影", note: "" });
   const [syncMessage, setSyncMessage] = useState("");
+  const [cloudMessage, setCloudMessage] = useState("");
+  const [cloudBusy, setCloudBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const persist = (next: KaiData) => {
     setData(next);
     saveData(next);
+  };
+
+  const persistSyncConfig = (next: SyncConfig) => {
+    setSyncConfig(next);
+    saveSyncConfig(next);
   };
 
   useEffect(() => {
@@ -553,25 +598,7 @@ export function App() {
     reader.onload = () => {
       try {
         const next = JSON.parse(String(reader.result)) as Partial<KaiData>;
-        persist({
-          sessions: Array.isArray(next.sessions)
-            ? next.sessions.map(normalizeSession).filter((session): session is FocusSession => Boolean(session))
-            : [],
-          progress: Array.isArray(next.progress)
-            ? next.progress.map(normalizeProgress).filter((entry): entry is ProgressEntry => Boolean(entry))
-            : [],
-          tasks: Array.isArray(next.tasks)
-            ? next.tasks.map(normalizeTask).filter((task): task is TaskItem => Boolean(task))
-            : [],
-          entertainment: Array.isArray(next.entertainment)
-            ? next.entertainment
-                .map(normalizeEntertainment)
-                .filter((item): item is EntertainmentItem => Boolean(item))
-            : [],
-          settings: {
-            examDate: next.settings?.examDate || defaultExamDate,
-          },
-        });
+        persist(normalizeKaiData(next));
       } catch {
         alert("无法导入这个 JSON 文件。");
       }
@@ -606,6 +633,107 @@ export function App() {
       setSyncMessage("已更新 study-data/records.json 和 summary.md。现在可以在 Codex 里说：评价最近学习。");
     } catch {
       setSyncMessage("同步已取消或失败。");
+    }
+  };
+
+  const getCloudHeaders = () => {
+    const token = syncConfig.token.trim();
+    if (!token) throw new Error("请先填写 GitHub Token。");
+    return {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+  };
+
+  const cloudFileName = () => syncConfig.fileName.trim() || defaultSyncFileName;
+
+  const createCloudGist = async () => {
+    setCloudBusy(true);
+    setCloudMessage("");
+    try {
+      const fileName = cloudFileName();
+      const response = await fetch("https://api.github.com/gists", {
+        method: "POST",
+        headers: getCloudHeaders(),
+        body: JSON.stringify({
+          description: "KaiDesk sync data",
+          public: false,
+          files: {
+            [fileName]: {
+              content: JSON.stringify(data, null, 2),
+            },
+          },
+        }),
+      });
+      if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
+      const gist = (await response.json()) as { id: string };
+      persistSyncConfig({ ...syncConfig, gistId: gist.id, fileName });
+      setCloudMessage(`已创建私密 Gist：${gist.id}，当前数据已上传。`);
+    } catch (error) {
+      setCloudMessage(error instanceof Error ? error.message : "创建云端数据失败。");
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const uploadToCloud = async () => {
+    const gistId = syncConfig.gistId.trim();
+    if (!gistId) {
+      setCloudMessage("请先填写 Gist ID，或点击创建云端数据。");
+      return;
+    }
+    setCloudBusy(true);
+    setCloudMessage("");
+    try {
+      const fileName = cloudFileName();
+      const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+        method: "PATCH",
+        headers: getCloudHeaders(),
+        body: JSON.stringify({
+          files: {
+            [fileName]: {
+              content: JSON.stringify(data, null, 2),
+            },
+          },
+        }),
+      });
+      if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
+      persistSyncConfig({ ...syncConfig, gistId, fileName });
+      setCloudMessage(`已同步到云端：${new Date().toLocaleString("zh-CN")}`);
+    } catch (error) {
+      setCloudMessage(error instanceof Error ? error.message : "同步到云端失败。");
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const pullFromCloud = async () => {
+    const gistId = syncConfig.gistId.trim();
+    if (!gistId) {
+      setCloudMessage("请先填写 Gist ID。");
+      return;
+    }
+    setCloudBusy(true);
+    setCloudMessage("");
+    try {
+      const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+        headers: getCloudHeaders(),
+      });
+      if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
+      const gist = (await response.json()) as { files?: Record<string, { content?: string }> };
+      const fileName = cloudFileName();
+      const content = gist.files?.[fileName]?.content;
+      if (!content) throw new Error(`云端没有找到 ${fileName}。`);
+      const next = normalizeKaiData(JSON.parse(content) as Partial<KaiData>);
+      persist(next);
+      persistSyncConfig({ ...syncConfig, gistId, fileName });
+      setCloudMessage(`已从云端拉取：${new Date().toLocaleString("zh-CN")}`);
+    } catch (error) {
+      setCloudMessage(error instanceof Error ? error.message : "从云端拉取失败。");
+    } finally {
+      setCloudBusy(false);
     }
   };
 
@@ -811,6 +939,43 @@ export function App() {
                   <strong>{openTasks.length}</strong>
                 </div>
               </div>
+            </section>
+
+            <section className="history-panel cloud-panel">
+              <div className="section-head compact">
+                <h2>云同步</h2>
+                <Upload size={16} />
+              </div>
+              <div className="cloud-form">
+                <input
+                  type="password"
+                  value={syncConfig.token}
+                  onChange={(event) => persistSyncConfig({ ...syncConfig, token: event.target.value })}
+                  placeholder="GitHub Token（只保存在本设备）"
+                />
+                <input
+                  value={syncConfig.gistId}
+                  onChange={(event) => persistSyncConfig({ ...syncConfig, gistId: event.target.value.trim() })}
+                  placeholder="Gist ID，可先留空后创建"
+                />
+                <input
+                  value={syncConfig.fileName}
+                  onChange={(event) => persistSyncConfig({ ...syncConfig, fileName: event.target.value })}
+                  placeholder="kaidesk-data.json"
+                />
+              </div>
+              <div className="cloud-actions">
+                <button className="secondary-button" onClick={createCloudGist} disabled={cloudBusy}>
+                  创建云端数据
+                </button>
+                <button className="primary-button" onClick={uploadToCloud} disabled={cloudBusy}>
+                  同步到云端
+                </button>
+                <button className="secondary-button" onClick={pullFromCloud} disabled={cloudBusy}>
+                  从云端拉取
+                </button>
+              </div>
+              {cloudMessage && <p className="sync-message compact-sync">{cloudMessage}</p>}
             </section>
 
             <section className="history-panel">
