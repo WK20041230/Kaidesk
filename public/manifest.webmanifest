@@ -1,0 +1,17 @@
+{
+  "name": "KaiDesk",
+  "short_name": "KaiDesk",
+  "description": "一个本地优先的个人工作台，整合待办、考研记录和娱乐清单。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#f7f5ef",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

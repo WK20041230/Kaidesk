@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KaiDesk</title>
+    <script>
+      const segments = window.location.pathname.split("/").filter(Boolean);
+      const repository = segments[0] || "";
+      const rest = segments.slice(1).join("/");
+      const base = repository ? `/${repository}/` : "/";
+      const path = rest ? `/${rest}` : "/";
+      window.location.replace(`${base}?p=${encodeURIComponent(path)}${window.location.search.replace("?", "&")}${window.location.hash}`);
+    </script>
+  </head>
+  <body></body>
+</html>

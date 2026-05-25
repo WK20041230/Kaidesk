@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+study-data/
+.codex-memory/
+codex-memory.ps1
+tsconfig.tsbuildinfo
