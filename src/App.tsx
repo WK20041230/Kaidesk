@@ -101,6 +101,7 @@ type SyncConfig = {
 
 const storageKey = "kaidesk-data-v1";
 const syncConfigKey = "kaidesk-sync-config-v1";
+const lastCloudSyncKey = "kaidesk-last-cloud-sync-v1";
 const legacyKeys = ["kai-focus-data-v4", "kai-focus-data-v3", "kai-focus-data-v2", "kai-focus-data-v1"];
 const defaultExamDate = "2026-12-20";
 const appBase = import.meta.env.BASE_URL;
@@ -416,17 +417,37 @@ export function App() {
   const [syncMessage, setSyncMessage] = useState("");
   const [cloudMessage, setCloudMessage] = useState("");
   const [cloudBusy, setCloudBusy] = useState(false);
+  const [hasLocalChanges, setHasLocalChanges] = useState(false);
+  const [lastCloudSync, setLastCloudSync] = useState(() => localStorage.getItem(lastCloudSyncKey) || "");
   const fileInput = useRef<HTMLInputElement>(null);
+  const hasLocalChangesRef = useRef(false);
+  const cloudBusyRef = useRef(false);
 
-  const persist = (next: KaiData) => {
+  const markCloudSynced = () => {
+    const value = new Date().toLocaleString("zh-CN");
+    setLastCloudSync(value);
+    localStorage.setItem(lastCloudSyncKey, value);
+  };
+
+  const markLocalChanges = (dirty: boolean) => {
+    hasLocalChangesRef.current = dirty;
+    setHasLocalChanges(dirty);
+  };
+
+  const persist = (next: KaiData, options: { dirty?: boolean } = {}) => {
     setData(next);
     saveData(next);
+    if (options.dirty !== false) markLocalChanges(true);
   };
 
   const persistSyncConfig = (next: SyncConfig) => {
     setSyncConfig(next);
     saveSyncConfig(next);
   };
+
+  useEffect(() => {
+    cloudBusyRef.current = cloudBusy;
+  }, [cloudBusy]);
 
   useEffect(() => {
     if (!running) return;
@@ -670,6 +691,8 @@ export function App() {
       if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
       const gist = (await response.json()) as { id: string };
       persistSyncConfig({ ...syncConfig, gistId: gist.id, fileName });
+      markLocalChanges(false);
+      markCloudSynced();
       setCloudMessage(`已创建私密 Gist：${gist.id}，当前数据已上传。`);
     } catch (error) {
       setCloudMessage(error instanceof Error ? error.message : "创建云端数据失败。");
@@ -681,7 +704,7 @@ export function App() {
   const uploadToCloud = async () => {
     const gistId = syncConfig.gistId.trim();
     if (!gistId) {
-      setCloudMessage("请先填写 Gist ID，或点击创建云端数据。");
+      setCloudMessage("请先填写 Gist ID，或用同步完成创建云端数据。");
       return;
     }
     setCloudBusy(true);
@@ -701,6 +724,8 @@ export function App() {
       });
       if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
       persistSyncConfig({ ...syncConfig, gistId, fileName });
+      markLocalChanges(false);
+      markCloudSynced();
       setCloudMessage(`已同步到云端：${new Date().toLocaleString("zh-CN")}`);
     } catch (error) {
       setCloudMessage(error instanceof Error ? error.message : "同步到云端失败。");
@@ -709,14 +734,23 @@ export function App() {
     }
   };
 
-  const pullFromCloud = async () => {
+  const pullFromCloud = async (mode: "manual" | "auto" = "manual") => {
     const gistId = syncConfig.gistId.trim();
     if (!gistId) {
-      setCloudMessage("请先填写 Gist ID。");
+      if (mode === "manual") setCloudMessage("请先填写 Gist ID。");
       return;
     }
+    if (!syncConfig.token.trim()) {
+      if (mode === "manual") setCloudMessage("请先填写 GitHub Token。");
+      return;
+    }
+    if (mode === "auto" && hasLocalChangesRef.current) {
+      setCloudMessage("本地有未上传修改，已暂停自动拉取。先点“同步完成”上传。");
+      return;
+    }
+    if (cloudBusyRef.current) return;
     setCloudBusy(true);
-    setCloudMessage("");
+    if (mode === "manual") setCloudMessage("");
     try {
       const response = await fetch(`https://api.github.com/gists/${gistId}`, {
         headers: getCloudHeaders(),
@@ -727,15 +761,51 @@ export function App() {
       const content = gist.files?.[fileName]?.content;
       if (!content) throw new Error(`云端没有找到 ${fileName}。`);
       const next = normalizeKaiData(JSON.parse(content) as Partial<KaiData>);
-      persist(next);
+      persist(next, { dirty: false });
+      markLocalChanges(false);
       persistSyncConfig({ ...syncConfig, gistId, fileName });
-      setCloudMessage(`已从云端拉取：${new Date().toLocaleString("zh-CN")}`);
+      markCloudSynced();
+      setCloudMessage(
+        mode === "auto"
+          ? `已自动拉取云端数据：${new Date().toLocaleString("zh-CN")}`
+          : `已从云端拉取：${new Date().toLocaleString("zh-CN")}`,
+      );
     } catch (error) {
       setCloudMessage(error instanceof Error ? error.message : "从云端拉取失败。");
     } finally {
       setCloudBusy(false);
     }
   };
+
+  const completeCloudSync = async () => {
+    if (!syncConfig.token.trim()) {
+      setCloudMessage("请先在高级设置里填写 GitHub Token。");
+      return;
+    }
+    if (!syncConfig.gistId.trim()) {
+      await createCloudGist();
+      return;
+    }
+    await uploadToCloud();
+  };
+
+  useEffect(() => {
+    if (!syncConfig.token.trim() || !syncConfig.gistId.trim()) return;
+
+    const autoPull = () => {
+      if (document.visibilityState === "visible") {
+        void pullFromCloud("auto");
+      }
+    };
+
+    autoPull();
+    document.addEventListener("visibilitychange", autoPull);
+    window.addEventListener("pageshow", autoPull);
+    return () => {
+      document.removeEventListener("visibilitychange", autoPull);
+      window.removeEventListener("pageshow", autoPull);
+    };
+  }, [syncConfig.token, syncConfig.gistId, syncConfig.fileName]);
 
   const resetSession = () => {
     setRunning(false);
@@ -946,7 +1016,25 @@ export function App() {
                 <h2>云同步</h2>
                 <Upload size={16} />
               </div>
-              <div className="cloud-form">
+              <div className="sync-status">
+                <strong>
+                  {hasLocalChanges ? "本地有未上传修改" : syncConfig.gistId ? "已连接云端" : "尚未连接云端"}
+                </strong>
+                <span>
+                  {lastCloudSync
+                    ? `上次同步：${lastCloudSync}`
+                    : syncConfig.gistId
+                      ? "打开页面或回到前台时会自动拉取"
+                      : "第一次点击同步完成会创建私密 Gist"}
+                </span>
+              </div>
+              <button className="primary-button cloud-sync-button" onClick={completeCloudSync} disabled={cloudBusy}>
+                <Upload size={17} />
+                {cloudBusy ? "同步中" : "同步完成"}
+              </button>
+              <details className="cloud-settings">
+                <summary>高级设置</summary>
+                <div className="cloud-form">
                 <input
                   type="password"
                   value={syncConfig.token}
@@ -963,18 +1051,8 @@ export function App() {
                   onChange={(event) => persistSyncConfig({ ...syncConfig, fileName: event.target.value })}
                   placeholder="kaidesk-data.json"
                 />
-              </div>
-              <div className="cloud-actions">
-                <button className="secondary-button" onClick={createCloudGist} disabled={cloudBusy}>
-                  创建云端数据
-                </button>
-                <button className="primary-button" onClick={uploadToCloud} disabled={cloudBusy}>
-                  同步到云端
-                </button>
-                <button className="secondary-button" onClick={pullFromCloud} disabled={cloudBusy}>
-                  从云端拉取
-                </button>
-              </div>
+                </div>
+              </details>
               {cloudMessage && <p className="sync-message compact-sync">{cloudMessage}</p>}
             </section>
 

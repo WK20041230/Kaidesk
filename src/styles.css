@@ -456,6 +456,43 @@ textarea:focus {
   width: 100%;
 }
 
+.sync-status {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(24, 32, 31, 0.055);
+}
+
+.sync-status strong {
+  font-size: 17px;
+}
+
+.sync-status span {
+  color: #65706d;
+  line-height: 1.45;
+}
+
+.cloud-sync-button {
+  width: 100%;
+  margin: 10px 0;
+}
+
+.cloud-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.cloud-settings summary {
+  cursor: pointer;
+  color: #274a45;
+  font-weight: 800;
+}
+
+.cloud-settings .cloud-form {
+  margin-top: 10px;
+}
+
 .fun-composer {
   grid-template-columns: minmax(0, 1fr) 180px auto;
   margin-bottom: 16px;

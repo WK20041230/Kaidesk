@@ -7,6 +7,7 @@ KaiDesk 是一个长期自用的本地优先个人工作台。当前重点是服
 - 首页：今日任务、近期待办、课程/生活事项、今日学习概览。
 - 考研专区：专注计时、考研倒计时、科目时间记录、数学/408 进度记录、日历和月度统计。
 - 娱乐清单：记录休息时想看的电影、剧、纪录片、游戏或书。
+- 云同步：用 GitHub 私密 Gist 在电脑、iPhone 和 iPad 之间同步数据。打开页面或从后台回到前台时会自动拉取云端数据；本地改动后点击“同步完成”上传。
 - Codex 同步：把学习记录写入 `study-data/records.json` 和 `study-data/summary.md`，之后在 Codex 里说“评价最近学习”。
 
 ## 命令
@@ -32,3 +33,12 @@ kaidesk-data-v1
 ```
 
 旧的 `kai-focus-data-*` 数据会自动兼容读取。可以用页面里的导入/导出按钮在不同浏览器或设备之间迁移数据。
+
+云同步配置保存在浏览器本地：
+
+```text
+kaidesk-sync-config-v1
+kaidesk-last-cloud-sync-v1
+```
+
+GitHub Token 只保存在当前设备的浏览器 localStorage，不会进入仓库。
