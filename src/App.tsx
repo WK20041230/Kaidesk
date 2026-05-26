@@ -5,13 +5,16 @@ import {
   CheckCircle2,
   Clapperboard,
   Download,
+  Pencil,
   ListTodo,
   Pause,
   Play,
   RotateCcw,
   Save,
   Square,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
@@ -337,6 +340,10 @@ function getLatestProgress(entries: ProgressEntry[], area: ProgressArea, date?: 
   return entries.find((entry) => entry.area === area && (!date || entry.date === date));
 }
 
+function isOverdueTask(task: TaskItem, today: string) {
+  return !task.done && Boolean(task.dueDate) && task.dueDate < today;
+}
+
 function buildCodexSummary(data: KaiData) {
   const today = todayKey();
   const currentMonth = today.slice(0, 7);
@@ -347,12 +354,24 @@ function buildCodexSummary(data: KaiData) {
   const latestMath = getLatestProgress(data.progress, "math");
   const latest408 = getLatestProgress(data.progress, "fourOhEight");
   const monthTotal = monthSessions.reduce((sum, session) => sum + session.seconds, 0);
+  const openTasks = data.tasks.filter((task) => !task.done);
+  const overdueTasks = openTasks.filter((task) => isOverdueTask(task, today));
+  const todayTasks = openTasks.filter((task) => !isOverdueTask(task, today) && (task.scope === "today" || task.dueDate === today));
+  const upcomingTasks = openTasks.filter(
+    (task) => !isOverdueTask(task, today) && task.scope !== "today" && task.dueDate !== today,
+  );
+  const doneTasks = data.tasks.filter((task) => task.done);
+  const openEntertainment = data.entertainment.filter((item) => !item.done);
 
   const subjectLines = subjects.map((subject) => `- ${subject.name}: ${formatDuration(monthTotals[subject.id])}`);
   const progressLines = data.progress.slice(0, 12).map((entry) => {
     const area = entry.area === "math" ? "Math" : "408";
     const note = entry.note ? ` - ${entry.note}` : "";
     return `- ${entry.date} ${area}: ${entry.content}${note}`;
+  });
+  const openTaskLines = openTasks.slice(0, 20).map((task) => {
+    const due = task.dueDate ? ` due ${task.dueDate}` : "";
+    return `- [${taskScopeLabels[task.scope]}] ${task.title}${due}`;
   });
 
   return [
@@ -390,10 +409,31 @@ function buildCodexSummary(data: KaiData) {
     "",
     "## Open Tasks",
     "",
-    ...(data.tasks.filter((task) => !task.done).slice(0, 20).map((task) => {
-      const due = task.dueDate ? ` due ${task.dueDate}` : "";
-      return `- [${taskScopeLabels[task.scope]}] ${task.title}${due}`;
-    }) || ["- none"]),
+    ...(openTaskLines.length ? openTaskLines : ["- none"]),
+    "",
+    "## Task Health",
+    "",
+    `- Open tasks: ${openTasks.length}`,
+    `- Overdue tasks: ${overdueTasks.length}`,
+    `- Today's tasks: ${todayTasks.length}`,
+    `- Upcoming tasks: ${upcomingTasks.length}`,
+    `- Recently done tasks: ${doneTasks.slice(0, 8).map((task) => task.title).join(" / ") || "none"}`,
+    "",
+    "## Overdue Tasks",
+    "",
+    ...(overdueTasks.length
+      ? overdueTasks.slice(0, 12).map((task) => `- [${taskScopeLabels[task.scope]}] ${task.title} due ${task.dueDate}`)
+      : ["- none"]),
+    "",
+    "## Entertainment Backlog",
+    "",
+    `- Open entertainment items: ${openEntertainment.length}`,
+    ...(openEntertainment.length
+      ? openEntertainment.slice(0, 12).map((item) => {
+          const note = item.note ? ` - ${item.note}` : "";
+          return `- [${item.kind}] ${item.title}${note}`;
+        })
+      : ["- none"]),
     "",
     "## Prompt",
     "",
@@ -414,6 +454,10 @@ export function App() {
   const [progressDraft, setProgressDraft] = useState({ math: "", fourOhEight: "" });
   const [taskDraft, setTaskDraft] = useState({ title: "", scope: "today" as TaskScope, dueDate: "" });
   const [funDraft, setFunDraft] = useState({ title: "", kind: "电影", note: "" });
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [taskEditDraft, setTaskEditDraft] = useState({ title: "", scope: "today" as TaskScope, dueDate: "" });
+  const [editingFunId, setEditingFunId] = useState<string | null>(null);
+  const [funEditDraft, setFunEditDraft] = useState({ title: "", kind: "", note: "" });
   const [syncMessage, setSyncMessage] = useState("");
   const [cloudMessage, setCloudMessage] = useState("");
   const [cloudBusy, setCloudBusy] = useState(false);
@@ -470,8 +514,13 @@ export function App() {
 
   const today = todayKey();
   const openTasks = data.tasks.filter((task) => !task.done);
-  const todayTasks = openTasks.filter((task) => task.scope === "today" || task.dueDate === today);
-  const upcomingTasks = openTasks.filter((task) => task.scope !== "today" && task.dueDate !== today).slice(0, 8);
+  const overdueTasks = openTasks.filter((task) => isOverdueTask(task, today));
+  const todayTasks = openTasks.filter(
+    (task) => !isOverdueTask(task, today) && (task.scope === "today" || task.dueDate === today),
+  );
+  const upcomingTasks = openTasks
+    .filter((task) => !isOverdueTask(task, today) && task.scope !== "today" && task.dueDate !== today)
+    .slice(0, 8);
   const recentDoneTasks = data.tasks.filter((task) => task.done).slice(0, 4);
   const openEntertainment = data.entertainment.filter((item) => !item.done);
   const todaySessions = useMemo(() => data.sessions.filter((session) => session.date === today), [data.sessions, today]);
@@ -575,6 +624,33 @@ export function App() {
     });
   };
 
+  const startEditTask = (task: TaskItem) => {
+    setEditingTaskId(task.id);
+    setTaskEditDraft({ title: task.title, scope: task.scope, dueDate: task.dueDate });
+  };
+
+  const saveTaskEdit = () => {
+    const title = taskEditDraft.title.trim();
+    if (!editingTaskId || !title) return;
+    persist({
+      ...data,
+      tasks: data.tasks.map((task) =>
+        task.id === editingTaskId
+          ? { ...task, title, scope: taskEditDraft.scope, dueDate: taskEditDraft.dueDate }
+          : task,
+      ),
+    });
+    setEditingTaskId(null);
+  };
+
+  const deleteTask = (id: string) => {
+    persist({
+      ...data,
+      tasks: data.tasks.filter((task) => task.id !== id),
+    });
+    if (editingTaskId === id) setEditingTaskId(null);
+  };
+
   const addEntertainment = () => {
     const title = funDraft.title.trim();
     if (!title) return;
@@ -599,6 +675,40 @@ export function App() {
     persist({
       ...data,
       entertainment: data.entertainment.map((item) => (item.id === id ? { ...item, done: !item.done } : item)),
+    });
+  };
+
+  const startEditEntertainment = (item: EntertainmentItem) => {
+    setEditingFunId(item.id);
+    setFunEditDraft({ title: item.title, kind: item.kind, note: item.note });
+  };
+
+  const saveEntertainmentEdit = () => {
+    const title = funEditDraft.title.trim();
+    if (!editingFunId || !title) return;
+    persist({
+      ...data,
+      entertainment: data.entertainment.map((item) =>
+        item.id === editingFunId
+          ? { ...item, title, kind: funEditDraft.kind.trim() || "电影", note: funEditDraft.note.trim() }
+          : item,
+      ),
+    });
+    setEditingFunId(null);
+  };
+
+  const deleteEntertainment = (id: string) => {
+    persist({
+      ...data,
+      entertainment: data.entertainment.filter((item) => item.id !== id),
+    });
+    if (editingFunId === id) setEditingFunId(null);
+  };
+
+  const deleteSession = (id: string) => {
+    persist({
+      ...data,
+      sessions: data.sessions.filter((session) => session.id !== id),
     });
   };
 
@@ -825,6 +935,121 @@ export function App() {
 
   const sectionHref = (section: ActiveSection) => (section === "home" ? appBase : `${appBase}${section}`);
 
+  const renderTaskItem = (task: TaskItem, meta: string) => {
+    const isEditing = editingTaskId === task.id;
+    return (
+      <article className={`task-item ${task.done ? "done" : ""}`} key={task.id}>
+        {isEditing ? (
+          <div className="inline-editor">
+            <input
+              value={taskEditDraft.title}
+              onChange={(event) => setTaskEditDraft({ ...taskEditDraft, title: event.target.value })}
+              placeholder="任务标题"
+            />
+            <select
+              value={taskEditDraft.scope}
+              onChange={(event) => setTaskEditDraft({ ...taskEditDraft, scope: event.target.value as TaskScope })}
+            >
+              {Object.entries(taskScopeLabels).map(([value, label]) => (
+                <option value={value} key={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={taskEditDraft.dueDate}
+              onChange={(event) => setTaskEditDraft({ ...taskEditDraft, dueDate: event.target.value })}
+            />
+            <div className="inline-actions">
+              <button className="secondary-button" onClick={saveTaskEdit}>
+                <Save size={16} />
+                保存
+              </button>
+              <button className="icon-button" onClick={() => setEditingTaskId(null)} title="取消">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <button className="task-check" onClick={() => toggleTask(task.id)} title={task.done ? "标记未完成" : "完成"}>
+              <CheckCircle2 size={18} />
+            </button>
+            <div className="item-main">
+              <strong>{task.title}</strong>
+              <small>{meta}</small>
+            </div>
+            <div className="item-actions">
+              <button className="icon-button" onClick={() => startEditTask(task)} title="编辑任务">
+                <Pencil size={16} />
+              </button>
+              <button className="icon-button danger" onClick={() => deleteTask(task.id)} title="删除任务">
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </>
+        )}
+      </article>
+    );
+  };
+
+  const renderEntertainmentItem = (item: EntertainmentItem) => {
+    const isEditing = editingFunId === item.id;
+    return (
+      <article className={`fun-item ${item.done ? "done" : ""}`} key={item.id}>
+        {isEditing ? (
+          <div className="inline-editor">
+            <input
+              value={funEditDraft.title}
+              onChange={(event) => setFunEditDraft({ ...funEditDraft, title: event.target.value })}
+              placeholder="标题"
+            />
+            <input
+              value={funEditDraft.kind}
+              onChange={(event) => setFunEditDraft({ ...funEditDraft, kind: event.target.value })}
+              placeholder="类型"
+            />
+            <textarea
+              value={funEditDraft.note}
+              onChange={(event) => setFunEditDraft({ ...funEditDraft, note: event.target.value })}
+              placeholder="备注"
+            />
+            <div className="inline-actions">
+              <button className="secondary-button" onClick={saveEntertainmentEdit}>
+                <Save size={16} />
+                保存
+              </button>
+              <button className="icon-button" onClick={() => setEditingFunId(null)} title="取消">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="item-main">
+              <strong>{item.title}</strong>
+              <span>{item.kind}</span>
+              {item.note && <p>{item.note}</p>}
+              <small>{item.done ? "已看 / 已玩" : "未完成"}</small>
+            </div>
+            <div className="item-actions">
+              <button className="icon-button" onClick={() => toggleEntertainment(item.id)} title="切换完成状态">
+                <CheckCircle2 size={16} />
+              </button>
+              <button className="icon-button" onClick={() => startEditEntertainment(item)} title="编辑">
+                <Pencil size={16} />
+              </button>
+              <button className="icon-button danger" onClick={() => deleteEntertainment(item.id)} title="删除">
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </>
+        )}
+      </article>
+    );
+  };
+
   return (
     <main className={`focus-shell ${activeSection === "home" ? "home-page" : "feature-page"}`}>
       {activeSection !== "home" && (
@@ -961,29 +1186,26 @@ export function App() {
             </div>
             <div className="task-columns">
               <div>
+                <h3>逾期</h3>
+                <div className="task-list">
+                  {overdueTasks.length === 0 && <p className="empty">没有逾期任务。</p>}
+                  {overdueTasks.map((task) =>
+                    renderTaskItem(task, `${task.dueDate} · ${taskScopeLabels[task.scope]}`),
+                  )}
+                </div>
+              </div>
+              <div>
                 <h3>今天</h3>
                 <div className="task-list">
                   {todayTasks.length === 0 && <p className="empty">今天还没有待办。</p>}
-                  {todayTasks.map((task) => (
-                    <button className="task-item" key={task.id} onClick={() => toggleTask(task.id)}>
-                      <CheckCircle2 size={18} />
-                      <span>{task.title}</span>
-                      <small>{taskScopeLabels[task.scope]}</small>
-                    </button>
-                  ))}
+                  {todayTasks.map((task) => renderTaskItem(task, task.dueDate || taskScopeLabels[task.scope]))}
                 </div>
               </div>
               <div>
                 <h3>近期</h3>
                 <div className="task-list">
                   {upcomingTasks.length === 0 && <p className="empty">近期任务会显示在这里。</p>}
-                  {upcomingTasks.map((task) => (
-                    <button className="task-item" key={task.id} onClick={() => toggleTask(task.id)}>
-                      <CheckCircle2 size={18} />
-                      <span>{task.title}</span>
-                      <small>{task.dueDate || taskScopeLabels[task.scope]}</small>
-                    </button>
-                  ))}
+                  {upcomingTasks.map((task) => renderTaskItem(task, task.dueDate || taskScopeLabels[task.scope]))}
                 </div>
               </div>
             </div>
@@ -1328,12 +1550,17 @@ export function App() {
             <div className="session-list">
               {recentSessions.length === 0 && <p className="empty">还没有记录。开始第一轮专注吧。</p>}
               {recentSessions.map((session) => (
-                <article key={session.id}>
-                  <strong>{formatDuration(session.seconds)}</strong>
-                  <span>
-                    {session.date} · {subjectById[session.subject].name}
-                  </span>
-                  {session.note && <p>{session.note}</p>}
+                <article className="session-record" key={session.id}>
+                  <div className="item-main">
+                    <strong>{formatDuration(session.seconds)}</strong>
+                    <span>
+                      {session.date} · {subjectById[session.subject].name}
+                    </span>
+                    {session.note && <p>{session.note}</p>}
+                  </div>
+                  <button className="icon-button danger" onClick={() => deleteSession(session.id)} title="删除记录">
+                    <Trash2 size={16} />
+                  </button>
                 </article>
               ))}
             </div>
@@ -1379,20 +1606,7 @@ export function App() {
           </div>
           <div className="fun-list">
             {data.entertainment.length === 0 && <p className="empty">还没有记录。以后突然想起想看的东西，就丢到这里。</p>}
-            {data.entertainment.map((item) => (
-              <button
-                className={`fun-item ${item.done ? "done" : ""}`}
-                key={item.id}
-                onClick={() => toggleEntertainment(item.id)}
-              >
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.kind}</span>
-                </div>
-                {item.note && <p>{item.note}</p>}
-                <small>{item.done ? "已看 / 已玩" : "未完成"}</small>
-              </button>
-            ))}
+            {data.entertainment.map(renderEntertainmentItem)}
           </div>
         </section>
         </>
