@@ -751,6 +751,15 @@ export function App() {
     await summaryWriter.close();
   };
 
+  const ensureProjectRoot = async (root: FileSystemDirectoryHandle) => {
+    try {
+      await root.getFileHandle("package.json");
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const syncForCodex = async () => {
     const picker = (window as WindowWithFileSystemAccess).showDirectoryPicker;
     if (!picker) {
@@ -760,8 +769,12 @@ export function App() {
 
     try {
       const root = await picker();
+      if (!(await ensureProjectRoot(root))) {
+        setSyncMessage("请选择项目根目录：C:\\Users\\Wu Kai\\Documents\\Codex\\Projects\\11408-study-tool。");
+        return;
+      }
       await writeCodexFiles(root, data);
-      setSyncMessage("已更新 study-data/records.json 和 summary.md。现在可以在 Codex 里说：评价最近学习。");
+      setSyncMessage("已更新 study-data/records.json 和 study-data/summary.md。现在可以在 Codex 里说：评价最近学习。");
     } catch {
       setSyncMessage("同步已取消或失败。");
     }
@@ -1454,6 +1467,9 @@ export function App() {
           </button>
           <input ref={fileInput} className="hidden" type="file" accept="application/json" onChange={importData} />
         </div>
+        <p className="sync-hint">
+          点击后请选择项目根目录：C:\Users\Wu Kai\Documents\Codex\Projects\11408-study-tool。
+        </p>
         {syncMessage && <p className="sync-message">{syncMessage}</p>}
       </section>
 
