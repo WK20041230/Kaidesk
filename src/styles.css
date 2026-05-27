@@ -525,9 +525,26 @@ textarea:focus {
   line-height: 1.45;
 }
 
+.compact-status {
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.compact-status strong {
+  font-size: 15px;
+}
+
+.compact-status span {
+  font-size: 12px;
+}
+
 .cloud-sync-button {
   width: 100%;
   margin: 10px 0;
+}
+
+.codex-export-button {
+  width: 100%;
 }
 
 .cloud-settings {

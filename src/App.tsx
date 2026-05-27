@@ -948,6 +948,25 @@ export function App() {
 
   const sectionHref = (section: ActiveSection) => (section === "home" ? appBase : `${appBase}${section}`);
 
+  const renderCloudSyncSummary = (compact = false) => (
+    <>
+      <div className={`sync-status ${compact ? "compact-status" : ""}`}>
+        <strong>{hasLocalChanges ? "本地有未上传修改" : syncConfig.gistId ? "已连接云端" : "尚未连接云端"}</strong>
+        <span>
+          {lastCloudSync
+            ? `上次同步：${lastCloudSync}`
+            : syncConfig.gistId
+              ? "打开页面或回到前台时会自动拉取"
+              : "第一次点击同步完成会创建私密 Gist"}
+        </span>
+      </div>
+      <button className="primary-button cloud-sync-button" onClick={completeCloudSync} disabled={cloudBusy}>
+        <Upload size={17} />
+        {cloudBusy ? "同步中" : "同步完成"}
+      </button>
+    </>
+  );
+
   const renderTaskItem = (task: TaskItem, meta: string) => {
     const isEditing = editingTaskId === task.id;
     return (
@@ -1111,6 +1130,7 @@ export function App() {
                 value={data.settings.examDate}
                 onChange={(event) => persist({ ...data, settings: { ...data.settings, examDate: event.target.value } })}
               />
+              {renderCloudSyncSummary(true)}
             </section>
           </>
         )}
@@ -1251,22 +1271,7 @@ export function App() {
                 <h2>云同步</h2>
                 <Upload size={16} />
               </div>
-              <div className="sync-status">
-                <strong>
-                  {hasLocalChanges ? "本地有未上传修改" : syncConfig.gistId ? "已连接云端" : "尚未连接云端"}
-                </strong>
-                <span>
-                  {lastCloudSync
-                    ? `上次同步：${lastCloudSync}`
-                    : syncConfig.gistId
-                      ? "打开页面或回到前台时会自动拉取"
-                      : "第一次点击同步完成会创建私密 Gist"}
-                </span>
-              </div>
-              <button className="primary-button cloud-sync-button" onClick={completeCloudSync} disabled={cloudBusy}>
-                <Upload size={17} />
-                {cloudBusy ? "同步中" : "同步完成"}
-              </button>
+              {renderCloudSyncSummary()}
               <details className="cloud-settings">
                 <summary>高级设置</summary>
                 <div className="cloud-form">
@@ -1289,6 +1294,21 @@ export function App() {
                 </div>
               </details>
               {cloudMessage && <p className="sync-message compact-sync">{cloudMessage}</p>}
+            </section>
+
+            <section className="history-panel">
+              <div className="section-head compact">
+                <h2>给 Codex 评价</h2>
+                <Save size={16} />
+              </div>
+              <button className="primary-button codex-export-button" onClick={syncForCodex}>
+                <Save size={17} />
+                导出全站数据
+              </button>
+              <p className="sync-hint">
+                用电脑端导出学习、任务和娱乐清单数据。第一次请选择项目根目录：C:\Users\Wu Kai\Documents\Codex\Projects\11408-study-tool。
+              </p>
+              {syncMessage && <p className="sync-message compact-sync">{syncMessage}</p>}
             </section>
 
             <section className="history-panel">
@@ -1453,10 +1473,6 @@ export function App() {
           </article>
         </div>
         <div className="progress-actions">
-          <button className="primary-button" onClick={syncForCodex}>
-            <Save size={17} />
-            同步给 Codex
-          </button>
           <button className="secondary-button" onClick={exportData}>
             <Download size={17} />
             导出
@@ -1467,10 +1483,6 @@ export function App() {
           </button>
           <input ref={fileInput} className="hidden" type="file" accept="application/json" onChange={importData} />
         </div>
-        <p className="sync-hint">
-          点击后请选择项目根目录：C:\Users\Wu Kai\Documents\Codex\Projects\11408-study-tool。
-        </p>
-        {syncMessage && <p className="sync-message">{syncMessage}</p>}
       </section>
 
       <section className="content-grid">
