@@ -1304,9 +1304,6 @@ export function App() {
                 <Save size={17} />
                 导出全站数据
               </button>
-              <p className="sync-hint">
-                用电脑端导出学习、任务和娱乐清单数据。第一次请选择项目根目录：C:\Users\Wu Kai\Documents\Codex\Projects\11408-study-tool。
-              </p>
               {syncMessage && <p className="sync-message compact-sync">{syncMessage}</p>}
             </section>
 
