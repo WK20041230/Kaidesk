@@ -1130,7 +1130,6 @@ export function App() {
                 value={data.settings.examDate}
                 onChange={(event) => persist({ ...data, settings: { ...data.settings, examDate: event.target.value } })}
               />
-              {renderCloudSyncSummary(true)}
             </section>
           </>
         )}
@@ -1473,6 +1472,10 @@ export function App() {
           </article>
         </div>
         <div className="progress-actions">
+          <button className="primary-button" onClick={completeCloudSync} disabled={cloudBusy}>
+            <Upload size={17} />
+            {cloudBusy ? "同步中" : "同步完成"}
+          </button>
           <button className="secondary-button" onClick={exportData}>
             <Download size={17} />
             导出
