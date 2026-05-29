@@ -510,6 +510,10 @@ export function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const hasLocalChangesRef = useRef(false);
   const cloudBusyRef = useRef(false);
+  const runningRef = useRef(running);
+  const elapsedSecondsRef = useRef(elapsedSeconds);
+  const selectedSubjectRef = useRef(selectedSubject);
+  const sessionNoteRef = useRef(sessionNote);
 
   const markCloudSynced = () => {
     const value = new Date().toLocaleString("zh-CN");
@@ -538,13 +542,20 @@ export function App() {
   }, [cloudBusy]);
 
   useEffect(() => {
+    runningRef.current = running;
+    elapsedSecondsRef.current = elapsedSeconds;
+    selectedSubjectRef.current = selectedSubject;
+    sessionNoteRef.current = sessionNote;
+  }, [elapsedSeconds, running, selectedSubject, sessionNote]);
+
+  useEffect(() => {
     if (!running) return;
     const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, [running]);
 
   useEffect(() => {
-    if (elapsedSeconds <= 0 && !sessionNote.trim()) {
+    if (!running && elapsedSeconds <= 0 && !sessionNote.trim()) {
       clearActiveFocusDraft();
       return;
     }
@@ -556,6 +567,39 @@ export function App() {
       subject: selectedSubject,
     });
   }, [elapsedSeconds, running, selectedSubject, sessionNote]);
+
+  const saveCurrentFocusDraft = () => {
+    const currentElapsed = elapsedSecondsRef.current;
+    const currentNote = sessionNoteRef.current;
+    const currentRunning = runningRef.current;
+    if (!currentRunning && currentElapsed <= 0 && !currentNote.trim()) {
+      clearActiveFocusDraft();
+      return;
+    }
+    saveActiveFocusDraft({
+      elapsedSeconds: currentElapsed,
+      lastSavedAt: new Date().toISOString(),
+      note: currentNote,
+      running: currentRunning,
+      subject: selectedSubjectRef.current,
+    });
+  };
+
+  useEffect(() => {
+    const saveBeforeLeaving = () => saveCurrentFocusDraft();
+    const saveWhenHidden = () => {
+      if (document.visibilityState === "hidden") saveCurrentFocusDraft();
+    };
+
+    window.addEventListener("beforeunload", saveBeforeLeaving);
+    window.addEventListener("pagehide", saveBeforeLeaving);
+    document.addEventListener("visibilitychange", saveWhenHidden);
+    return () => {
+      window.removeEventListener("beforeunload", saveBeforeLeaving);
+      window.removeEventListener("pagehide", saveBeforeLeaving);
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+    };
+  }, []);
 
   useEffect(() => {
     const onPopState = () => setActiveSection(sectionFromPath());
@@ -998,6 +1042,21 @@ export function App() {
     clearActiveFocusDraft();
   };
 
+  const toggleFocusTimer = () => {
+    setRunning((value) => {
+      const next = !value;
+      runningRef.current = next;
+      saveActiveFocusDraft({
+        elapsedSeconds: elapsedSecondsRef.current,
+        lastSavedAt: new Date().toISOString(),
+        note: sessionNoteRef.current,
+        running: next,
+        subject: selectedSubjectRef.current,
+      });
+      return next;
+    });
+  };
+
   const moveMonth = (step: number) => {
     setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + step, 1));
   };
@@ -1433,7 +1492,7 @@ export function App() {
               ))}
             </div>
             <div className="timer-actions">
-              <button className="primary-button" onClick={() => setRunning((value) => !value)}>
+              <button className="primary-button" onClick={toggleFocusTimer}>
                 {running ? <Pause size={19} /> : <Play size={19} />}
                 {running ? "暂停" : "开始"}
               </button>
