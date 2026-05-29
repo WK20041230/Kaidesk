@@ -989,7 +989,15 @@ export function App() {
       const fileName = cloudFileName();
       const content = gist.files?.[fileName]?.content;
       if (!content) throw new Error(`云端没有找到 ${fileName}。`);
+      if (mode === "auto" && hasLocalChangesRef.current) {
+        setCloudMessage("本地有未上传修改，已跳过这次自动拉取。先点“同步完成”上传。");
+        return;
+      }
       const next = normalizeKaiData(JSON.parse(content) as Partial<KaiData>);
+      if (mode === "auto" && hasLocalChangesRef.current) {
+        setCloudMessage("本地有未上传修改，已跳过这次自动拉取。先点“同步完成”上传。");
+        return;
+      }
       persist(next, { dirty: false });
       markLocalChanges(false);
       persistSyncConfig({ ...syncConfig, gistId, fileName });
