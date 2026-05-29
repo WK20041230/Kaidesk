@@ -102,9 +102,18 @@ type SyncConfig = {
   fileName: string;
 };
 
+type ActiveFocusDraft = {
+  elapsedSeconds: number;
+  lastSavedAt: string;
+  note: string;
+  running: boolean;
+  subject: SubjectId;
+};
+
 const storageKey = "kaidesk-data-v1";
 const syncConfigKey = "kaidesk-sync-config-v1";
 const lastCloudSyncKey = "kaidesk-last-cloud-sync-v1";
+const activeFocusKey = "kaidesk-active-focus-v1";
 const legacyKeys = ["kai-focus-data-v4", "kai-focus-data-v3", "kai-focus-data-v2", "kai-focus-data-v1"];
 const defaultExamDate = "2026-12-20";
 const appBase = import.meta.env.BASE_URL;
@@ -288,6 +297,37 @@ function saveSyncConfig(config: SyncConfig) {
   localStorage.setItem(syncConfigKey, JSON.stringify(config));
 }
 
+function loadActiveFocusDraft(): ActiveFocusDraft | null {
+  const raw = localStorage.getItem(activeFocusKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<ActiveFocusDraft>;
+    const subject = subjects.find((item) => item.id === parsed.subject)?.id ?? "math";
+    const elapsedSeconds = Math.max(0, Math.floor(Number(parsed.elapsedSeconds) || 0));
+    const lastSavedAt = parsed.lastSavedAt || new Date().toISOString();
+    const catchUpSeconds = parsed.running
+      ? Math.max(0, Math.floor((Date.now() - new Date(lastSavedAt).getTime()) / 1000))
+      : 0;
+    return {
+      elapsedSeconds: elapsedSeconds + catchUpSeconds,
+      lastSavedAt: new Date().toISOString(),
+      note: parsed.note || "",
+      running: Boolean(parsed.running),
+      subject,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveFocusDraft(draft: ActiveFocusDraft) {
+  localStorage.setItem(activeFocusKey, JSON.stringify(draft));
+}
+
+function clearActiveFocusDraft() {
+  localStorage.removeItem(activeFocusKey);
+}
+
 function formatDuration(seconds: number) {
   if (seconds < 60) return `${seconds} 秒`;
   const totalMinutes = Math.round(seconds / 60);
@@ -445,10 +485,14 @@ export function App() {
   const [data, setData] = useState<KaiData>(() => loadData());
   const [syncConfig, setSyncConfig] = useState<SyncConfig>(() => loadSyncConfig());
   const [activeSection, setActiveSection] = useState<ActiveSection>(() => sectionFromPath());
-  const [running, setRunning] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [selectedSubject, setSelectedSubject] = useState<SubjectId>("math");
-  const [sessionNote, setSessionNote] = useState("");
+  const [restoredFocusDraft] = useState(() => loadActiveFocusDraft());
+  const [running, setRunning] = useState(() => restoredFocusDraft?.running ?? false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(() => restoredFocusDraft?.elapsedSeconds ?? 0);
+  const [selectedSubject, setSelectedSubject] = useState<SubjectId>(() => restoredFocusDraft?.subject ?? "math");
+  const [sessionNote, setSessionNote] = useState(() => restoredFocusDraft?.note ?? "");
+  const [focusRestoreMessage, setFocusRestoreMessage] = useState(() =>
+    restoredFocusDraft ? "已恢复上次未记录的专注。" : "",
+  );
   const [monthCursor, setMonthCursor] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [progressDraft, setProgressDraft] = useState({ math: "", fourOhEight: "" });
@@ -498,6 +542,20 @@ export function App() {
     const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, [running]);
+
+  useEffect(() => {
+    if (elapsedSeconds <= 0 && !sessionNote.trim()) {
+      clearActiveFocusDraft();
+      return;
+    }
+    saveActiveFocusDraft({
+      elapsedSeconds,
+      lastSavedAt: new Date().toISOString(),
+      note: sessionNote,
+      running,
+      subject: selectedSubject,
+    });
+  }, [elapsedSeconds, running, selectedSubject, sessionNote]);
 
   useEffect(() => {
     const onPopState = () => setActiveSection(sectionFromPath());
@@ -574,6 +632,8 @@ export function App() {
     setRunning(false);
     setElapsedSeconds(0);
     setSessionNote("");
+    setFocusRestoreMessage("");
+    clearActiveFocusDraft();
     setSelectedDate(today);
   };
 
@@ -933,6 +993,9 @@ export function App() {
   const resetSession = () => {
     setRunning(false);
     setElapsedSeconds(0);
+    setSessionNote("");
+    setFocusRestoreMessage("");
+    clearActiveFocusDraft();
   };
 
   const moveMonth = (step: number) => {
@@ -1382,6 +1445,7 @@ export function App() {
                 <RotateCcw size={18} />
               </button>
             </div>
+            {focusRestoreMessage && <p className="focus-restore-message">{focusRestoreMessage}</p>}
             <textarea
               value={sessionNote}
               onChange={(event) => setSessionNote(event.target.value)}

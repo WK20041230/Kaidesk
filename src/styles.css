@@ -286,6 +286,15 @@ button:disabled {
   min-height: 110px;
 }
 
+.focus-restore-message {
+  margin: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #27524d;
+  background: rgba(22, 99, 90, 0.1);
+  line-height: 1.45;
+}
+
 .primary-button,
 .secondary-button,
 .icon-button {
