@@ -113,6 +113,7 @@ type ActiveFocusDraft = {
 const storageKey = "kaidesk-data-v1";
 const syncConfigKey = "kaidesk-sync-config-v1";
 const lastCloudSyncKey = "kaidesk-last-cloud-sync-v1";
+const localDirtyKey = "kaidesk-local-dirty-v1";
 const activeFocusKey = "kaidesk-active-focus-v1";
 const legacyKeys = ["kai-focus-data-v4", "kai-focus-data-v3", "kai-focus-data-v2", "kai-focus-data-v1"];
 const defaultExamDate = "2026-12-20";
@@ -505,10 +506,10 @@ export function App() {
   const [syncMessage, setSyncMessage] = useState("");
   const [cloudMessage, setCloudMessage] = useState("");
   const [cloudBusy, setCloudBusy] = useState(false);
-  const [hasLocalChanges, setHasLocalChanges] = useState(false);
+  const [hasLocalChanges, setHasLocalChanges] = useState(() => localStorage.getItem(localDirtyKey) === "true");
   const [lastCloudSync, setLastCloudSync] = useState(() => localStorage.getItem(lastCloudSyncKey) || "");
   const fileInput = useRef<HTMLInputElement>(null);
-  const hasLocalChangesRef = useRef(false);
+  const hasLocalChangesRef = useRef(localStorage.getItem(localDirtyKey) === "true");
   const cloudBusyRef = useRef(false);
   const runningRef = useRef(running);
   const elapsedSecondsRef = useRef(elapsedSeconds);
@@ -524,6 +525,7 @@ export function App() {
   const markLocalChanges = (dirty: boolean) => {
     hasLocalChangesRef.current = dirty;
     setHasLocalChanges(dirty);
+    localStorage.setItem(localDirtyKey, dirty ? "true" : "false");
   };
 
   const persist = (next: KaiData, options: { dirty?: boolean } = {}) => {
