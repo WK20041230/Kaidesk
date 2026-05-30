@@ -515,6 +515,7 @@ export function App() {
   const elapsedSecondsRef = useRef(elapsedSeconds);
   const selectedSubjectRef = useRef(selectedSubject);
   const sessionNoteRef = useRef(sessionNote);
+  const lastTimerTickAtRef = useRef(Date.now());
 
   const markCloudSynced = () => {
     const value = new Date().toLocaleString("zh-CN");
@@ -552,8 +553,23 @@ export function App() {
 
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
+    lastTimerTickAtRef.current = Date.now();
+    const reconcileElapsedSeconds = () => {
+      const now = Date.now();
+      const deltaSeconds = Math.floor((now - lastTimerTickAtRef.current) / 1000);
+      if (deltaSeconds <= 0) return;
+      lastTimerTickAtRef.current += deltaSeconds * 1000;
+      setElapsedSeconds((value) => value + deltaSeconds);
+    };
+    const timer = window.setInterval(reconcileElapsedSeconds, 1000);
+    const reconcileWhenVisible = () => {
+      if (document.visibilityState === "visible") reconcileElapsedSeconds();
+    };
+    document.addEventListener("visibilitychange", reconcileWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", reconcileWhenVisible);
+    };
   }, [running]);
 
   useEffect(() => {
