@@ -1,5 +1,6 @@
-const CACHE_NAME = "kai-desk-v1";
-const ASSETS = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon.svg"];
+const CACHE_NAME = "kai-desk-v2";
+const BASE_URL = new URL("./", self.registration.scope).pathname;
+const ASSETS = [BASE_URL, `${BASE_URL}index.html`, `${BASE_URL}manifest.webmanifest`, `${BASE_URL}icons/icon.svg`];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
@@ -19,9 +20,8 @@ self.addEventListener("fetch", (event) => {
     caches.match(event.request).then((cached) => {
       return (
         cached ||
-        fetch(event.request).catch(() => caches.match("/"))
+        fetch(event.request).catch(() => caches.match(BASE_URL))
       );
     }),
   );
 });
-

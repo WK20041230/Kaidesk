@@ -113,6 +113,14 @@ button:disabled {
   font-weight: 500;
 }
 
+.compact-modules {
+  gap: 10px;
+}
+
+.compact-modules .module-card {
+  padding-block: 12px;
+}
+
 .hero,
 .dashboard-grid,
 .content-grid {
@@ -274,6 +282,14 @@ button:disabled {
   font-weight: 800;
 }
 
+.timer-running .subject-picker button:not(.active) {
+  opacity: 0.34;
+}
+
+.timer-running .subject-picker button.active {
+  opacity: 1;
+}
+
 .timer-actions {
   display: flex;
   align-items: center;
@@ -395,6 +411,12 @@ textarea:focus {
 .task-columns h3 {
   margin: 0 0 10px;
   font-size: 18px;
+}
+
+.task-columns h3 small {
+  color: #65706d;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .task-list,
@@ -571,6 +593,42 @@ textarea:focus {
   margin-top: 10px;
 }
 
+.toolbox-panel {
+  padding: 0;
+}
+
+.toolbox-panel > summary,
+.data-tools > summary {
+  cursor: pointer;
+  color: #274a45;
+  font-weight: 800;
+}
+
+.toolbox-panel > summary {
+  padding: 18px;
+}
+
+.toolbox-panel[open] > summary {
+  border-bottom: 1px solid rgba(24, 32, 31, 0.08);
+}
+
+.toolbox-section {
+  padding: 16px 18px;
+}
+
+.toolbox-section + .toolbox-section {
+  border-top: 1px solid rgba(24, 32, 31, 0.08);
+}
+
+.text-button {
+  margin-top: 10px;
+  border: 0;
+  padding: 0;
+  color: #16635a;
+  background: transparent;
+  font-weight: 800;
+}
+
 .fun-composer {
   grid-template-columns: minmax(0, 1fr) 180px auto;
   margin-bottom: 16px;
@@ -616,6 +674,46 @@ textarea:focus {
 
 .stats-panel strong {
   font-size: 30px;
+}
+
+.study-block {
+  margin-bottom: 18px;
+}
+
+.study-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.study-block-head p,
+.study-block-head span {
+  margin: 0;
+}
+
+.study-block-head p {
+  color: #16635a;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.study-block-head span {
+  color: #65706d;
+  font-size: 13px;
+}
+
+.today-study-block .stats-panel {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.today-study-block .subject-panel:last-child {
+  margin-bottom: 0;
+}
+
+.review-study-block {
+  margin-bottom: 0;
 }
 
 .bar,
@@ -717,9 +815,20 @@ textarea:focus {
 
 .progress-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 12px;
+}
+
+.data-tools {
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(24, 32, 31, 0.055);
+}
+
+.data-tools .data-actions {
+  margin-top: 10px;
 }
 
 .week-row,
@@ -880,7 +989,6 @@ textarea:focus {
   .hero,
   .home-grid,
   .module-grid,
-  .dashboard-grid,
   .content-grid,
   .timer-panel {
     grid-template-columns: 1fr;
@@ -904,16 +1012,45 @@ textarea:focus {
     font-size: 36px;
   }
 
+  .feature-page .page-topbar {
+    margin-bottom: 10px;
+  }
+
+  .feature-page .hero {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .study-page .hero-copy {
+    display: none;
+  }
+
   .countdown-card strong {
     font-size: 46px;
   }
 
+  .feature-page .countdown-card {
+    grid-template-columns: auto auto 1fr;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 12px 14px;
+  }
+
+  .feature-page .countdown-card strong {
+    font-size: 36px;
+  }
+
+  .feature-page .countdown-card input {
+    grid-column: 1 / -1;
+    padding-block: 8px;
+  }
+
   .timer-ring {
-    width: min(280px, 100%);
+    width: min(200px, 100%);
   }
 
   .timer-ring strong {
-    font-size: 44px;
+    font-size: 40px;
   }
 
   .timer-actions,
@@ -921,10 +1058,50 @@ textarea:focus {
   .task-composer,
   .task-columns,
   .fun-composer,
-  .fun-list,
+  .fun-list {
+    grid-template-columns: 1fr;
+  }
+
   .subject-picker,
   .subject-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .timer-panel {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .subject-picker {
+    gap: 6px;
+  }
+
+  .subject-picker button {
+    min-height: 36px;
+    padding: 4px 7px;
+  }
+
+  .subject-picker button span {
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
+  }
+
+  .timer-panel textarea {
+    min-height: 78px;
+  }
+
+  .study-block-head {
+    display: grid;
+    gap: 2px;
+  }
+
+  .today-study-block .stats-panel {
     grid-template-columns: 1fr;
+  }
+
+  .subject-grid article {
+    padding: 10px;
   }
 
   .page-topbar {

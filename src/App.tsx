@@ -349,6 +349,12 @@ function formatClock(totalSeconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatCalendarDuration(seconds: number) {
+  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}m`;
+  const hours = seconds / 3600;
+  return hours < 10 ? `${hours.toFixed(1).replace(/\.0$/, "")}h` : `${Math.round(hours)}h`;
+}
+
 function monthLabel(date: Date) {
   return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(date);
 }
@@ -497,6 +503,9 @@ export function App() {
   const [monthCursor, setMonthCursor] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [progressDraft, setProgressDraft] = useState({ math: "", fourOhEight: "" });
+  const [editingProgressId, setEditingProgressId] = useState<string | null>(null);
+  const [progressEditDraft, setProgressEditDraft] = useState("");
+  const [showAllUpcomingTasks, setShowAllUpcomingTasks] = useState(false);
   const [taskDraft, setTaskDraft] = useState({ title: "", scope: "today" as TaskScope, dueDate: "" });
   const [funDraft, setFunDraft] = useState({ title: "", kind: "电影", note: "" });
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -510,6 +519,7 @@ export function App() {
   const [lastCloudSync, setLastCloudSync] = useState(() => localStorage.getItem(lastCloudSyncKey) || "");
   const fileInput = useRef<HTMLInputElement>(null);
   const hasLocalChangesRef = useRef(localStorage.getItem(localDirtyKey) === "true");
+  const localChangeVersionRef = useRef(0);
   const cloudBusyRef = useRef(false);
   const runningRef = useRef(running);
   const elapsedSecondsRef = useRef(elapsedSeconds);
@@ -532,7 +542,10 @@ export function App() {
   const persist = (next: KaiData, options: { dirty?: boolean } = {}) => {
     setData(next);
     saveData(next);
-    if (options.dirty !== false) markLocalChanges(true);
+    if (options.dirty !== false) {
+      localChangeVersionRef.current += 1;
+      markLocalChanges(true);
+    }
   };
 
   const persistSyncConfig = (next: SyncConfig) => {
@@ -638,9 +651,10 @@ export function App() {
   const todayTasks = openTasks.filter(
     (task) => !isOverdueTask(task, today) && (task.scope === "today" || task.dueDate === today),
   );
-  const upcomingTasks = openTasks
-    .filter((task) => !isOverdueTask(task, today) && task.scope !== "today" && task.dueDate !== today)
-    .slice(0, 8);
+  const upcomingTasks = openTasks.filter(
+    (task) => !isOverdueTask(task, today) && task.scope !== "today" && task.dueDate !== today,
+  );
+  const visibleUpcomingTasks = showAllUpcomingTasks ? upcomingTasks : upcomingTasks.slice(0, 4);
   const recentDoneTasks = data.tasks.filter((task) => task.done).slice(0, 4);
   const openEntertainment = data.entertainment.filter((item) => !item.done);
   const todaySessions = useMemo(() => data.sessions.filter((session) => session.date === today), [data.sessions, today]);
@@ -671,7 +685,6 @@ export function App() {
     }, {});
   }, [data.sessions]);
 
-  const recentSessions = data.sessions.slice(0, 8);
   const latestMath = getLatestProgress(data.progress, "math");
   const latest408 = getLatestProgress(data.progress, "fourOhEight");
 
@@ -717,6 +730,34 @@ export function App() {
     });
     setProgressDraft({ ...progressDraft, [area]: "" });
     setSelectedDate(today);
+  };
+
+  const startEditProgress = (entry: ProgressEntry) => {
+    setEditingProgressId(entry.id);
+    setProgressEditDraft(entry.content);
+  };
+
+  const saveProgressEdit = () => {
+    const content = progressEditDraft.trim();
+    if (!editingProgressId || !content) return;
+    persist({
+      ...data,
+      progress: data.progress.map((entry) => (entry.id === editingProgressId ? { ...entry, content } : entry)),
+    });
+    setEditingProgressId(null);
+    setProgressEditDraft("");
+  };
+
+  const deleteProgress = (id: string) => {
+    if (!window.confirm("删除这条进度记录？")) return;
+    persist({
+      ...data,
+      progress: data.progress.filter((entry) => entry.id !== id),
+    });
+    if (editingProgressId === id) {
+      setEditingProgressId(null);
+      setProgressEditDraft("");
+    }
   };
 
   const addTask = () => {
@@ -766,6 +807,7 @@ export function App() {
   };
 
   const deleteTask = (id: string) => {
+    if (!window.confirm("删除这个任务？")) return;
     persist({
       ...data,
       tasks: data.tasks.filter((task) => task.id !== id),
@@ -820,18 +862,12 @@ export function App() {
   };
 
   const deleteEntertainment = (id: string) => {
+    if (!window.confirm("删除这条娱乐清单记录？")) return;
     persist({
       ...data,
       entertainment: data.entertainment.filter((item) => item.id !== id),
     });
     if (editingFunId === id) setEditingFunId(null);
-  };
-
-  const deleteSession = (id: string) => {
-    persist({
-      ...data,
-      sessions: data.sessions.filter((session) => session.id !== id),
-    });
   };
 
   const exportData = () => {
@@ -920,6 +956,7 @@ export function App() {
     setCloudMessage("");
     try {
       const fileName = cloudFileName();
+      const uploadedChangeVersion = localChangeVersionRef.current;
       const response = await fetch("https://api.github.com/gists", {
         method: "POST",
         headers: getCloudHeaders(),
@@ -936,9 +973,13 @@ export function App() {
       if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
       const gist = (await response.json()) as { id: string };
       persistSyncConfig({ ...syncConfig, gistId: gist.id, fileName });
-      markLocalChanges(false);
       markCloudSynced();
-      setCloudMessage(`已创建私密 Gist：${gist.id}，当前数据已上传。`);
+      if (localChangeVersionRef.current === uploadedChangeVersion) {
+        markLocalChanges(false);
+        setCloudMessage(`已创建私密 Gist：${gist.id}，当前数据已上传。`);
+      } else {
+        setCloudMessage(`已创建私密 Gist：${gist.id}。同步期间有新修改，请再点一次“同步完成”。`);
+      }
     } catch (error) {
       setCloudMessage(error instanceof Error ? error.message : "创建云端数据失败。");
     } finally {
@@ -956,6 +997,7 @@ export function App() {
     setCloudMessage("");
     try {
       const fileName = cloudFileName();
+      const uploadedChangeVersion = localChangeVersionRef.current;
       const response = await fetch(`https://api.github.com/gists/${gistId}`, {
         method: "PATCH",
         headers: getCloudHeaders(),
@@ -969,9 +1011,13 @@ export function App() {
       });
       if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
       persistSyncConfig({ ...syncConfig, gistId, fileName });
-      markLocalChanges(false);
       markCloudSynced();
-      setCloudMessage(`已同步到云端：${new Date().toLocaleString("zh-CN")}`);
+      if (localChangeVersionRef.current === uploadedChangeVersion) {
+        markLocalChanges(false);
+        setCloudMessage(`已同步到云端：${new Date().toLocaleString("zh-CN")}`);
+      } else {
+        setCloudMessage("本轮上传已完成，但同步期间有新修改。请再点一次“同步完成”。");
+      }
     } catch (error) {
       setCloudMessage(error instanceof Error ? error.message : "同步到云端失败。");
     } finally {
@@ -1231,7 +1277,7 @@ export function App() {
   };
 
   return (
-    <main className={`focus-shell ${activeSection === "home" ? "home-page" : "feature-page"}`}>
+    <main className={`focus-shell ${activeSection === "home" ? "home-page" : `feature-page ${activeSection}-page`}`}>
       {activeSection !== "home" && (
         <div className="page-topbar">
           <a
@@ -1299,7 +1345,7 @@ export function App() {
 
       {activeSection === "home" && (
         <>
-        <section className="module-grid">
+        <section className="module-grid compact-modules">
           <a
             className="module-card"
             href={sectionHref("study")}
@@ -1366,6 +1412,13 @@ export function App() {
             </div>
             <div className="task-columns">
               <div>
+                <h3>今天</h3>
+                <div className="task-list">
+                  {todayTasks.length === 0 && <p className="empty">今天还没有待办。</p>}
+                  {todayTasks.map((task) => renderTaskItem(task, task.dueDate || taskScopeLabels[task.scope]))}
+                </div>
+              </div>
+              <div>
                 <h3>逾期</h3>
                 <div className="task-list">
                   {overdueTasks.length === 0 && <p className="empty">没有逾期任务。</p>}
@@ -1375,18 +1428,16 @@ export function App() {
                 </div>
               </div>
               <div>
-                <h3>今天</h3>
-                <div className="task-list">
-                  {todayTasks.length === 0 && <p className="empty">今天还没有待办。</p>}
-                  {todayTasks.map((task) => renderTaskItem(task, task.dueDate || taskScopeLabels[task.scope]))}
-                </div>
-              </div>
-              <div>
-                <h3>近期</h3>
+                <h3>近期 <small>{upcomingTasks.length ? `${upcomingTasks.length} 项` : ""}</small></h3>
                 <div className="task-list">
                   {upcomingTasks.length === 0 && <p className="empty">近期任务会显示在这里。</p>}
-                  {upcomingTasks.map((task) => renderTaskItem(task, task.dueDate || taskScopeLabels[task.scope]))}
+                  {visibleUpcomingTasks.map((task) => renderTaskItem(task, task.dueDate || taskScopeLabels[task.scope]))}
                 </div>
+                {upcomingTasks.length > 4 && (
+                  <button className="text-button" onClick={() => setShowAllUpcomingTasks((value) => !value)}>
+                    {showAllUpcomingTasks ? "收起" : "查看全部"}
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -1413,79 +1464,64 @@ export function App() {
               </div>
             </section>
 
-            <section className="history-panel cloud-panel">
-              <div className="section-head compact">
-                <h2>云同步</h2>
-                <Upload size={16} />
-              </div>
-              {renderCloudSyncSummary()}
-              <details className="cloud-settings">
-                <summary>高级设置</summary>
-                <div className="cloud-form">
-                <input
-                  type="password"
-                  value={syncConfig.token}
-                  onChange={(event) => persistSyncConfig({ ...syncConfig, token: event.target.value })}
-                  placeholder="GitHub Token（只保存在本设备）"
-                />
-                <input
-                  value={syncConfig.gistId}
-                  onChange={(event) => persistSyncConfig({ ...syncConfig, gistId: event.target.value.trim() })}
-                  placeholder="Gist ID，可先留空后创建"
-                />
-                <input
-                  value={syncConfig.fileName}
-                  onChange={(event) => persistSyncConfig({ ...syncConfig, fileName: event.target.value })}
-                  placeholder="kaidesk-data.json"
-                />
+            <details className="history-panel toolbox-panel">
+              <summary>工具箱 · 同步与回顾</summary>
+              <section className="toolbox-section">
+                <div className="section-head compact">
+                  <h2>云同步</h2>
+                  <Upload size={16} />
                 </div>
-              </details>
-              {cloudMessage && <p className="sync-message compact-sync">{cloudMessage}</p>}
-            </section>
-
-            <section className="history-panel">
-              <div className="section-head compact">
-                <h2>给 Codex 评价</h2>
-                <Save size={16} />
-              </div>
-              <button className="primary-button codex-export-button" onClick={syncForCodex}>
-                <Save size={17} />
-                导出全站数据
-              </button>
-              {syncMessage && <p className="sync-message compact-sync">{syncMessage}</p>}
-            </section>
-
-            <section className="history-panel">
-              <div className="section-head compact">
-                <h2>休息想看</h2>
-                <Clapperboard size={16} />
-              </div>
-              <div className="session-list">
-                {openEntertainment.length === 0 && <p className="empty">娱乐清单还是空的。</p>}
-                {openEntertainment.slice(0, 5).map((item) => (
-                  <article key={item.id}>
-                    <strong>{item.title}</strong>
-                    <span>{item.kind}</span>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="history-panel">
-              <div className="section-head compact">
-                <h2>刚完成</h2>
-                <CheckCircle2 size={16} />
-              </div>
-              <div className="session-list">
-                {recentDoneTasks.length === 0 && <p className="empty">完成后的任务会留在这里。</p>}
-                {recentDoneTasks.map((task) => (
-                  <article key={task.id}>
-                    <strong>{task.title}</strong>
-                    <span>{taskScopeLabels[task.scope]}</span>
-                  </article>
-                ))}
-              </div>
-            </section>
+                {renderCloudSyncSummary()}
+                <details className="cloud-settings">
+                  <summary>高级设置</summary>
+                  <div className="cloud-form">
+                    <input
+                      type="password"
+                      value={syncConfig.token}
+                      onChange={(event) => persistSyncConfig({ ...syncConfig, token: event.target.value })}
+                      placeholder="GitHub Token（只保存在本设备）"
+                    />
+                    <input
+                      value={syncConfig.gistId}
+                      onChange={(event) => persistSyncConfig({ ...syncConfig, gistId: event.target.value.trim() })}
+                      placeholder="Gist ID，可先留空后创建"
+                    />
+                    <input
+                      value={syncConfig.fileName}
+                      onChange={(event) => persistSyncConfig({ ...syncConfig, fileName: event.target.value })}
+                      placeholder="kaidesk-data.json"
+                    />
+                  </div>
+                </details>
+                {cloudMessage && <p className="sync-message compact-sync">{cloudMessage}</p>}
+              </section>
+              <section className="toolbox-section">
+                <div className="section-head compact">
+                  <h2>给 Codex 评价</h2>
+                  <Save size={16} />
+                </div>
+                <button className="primary-button codex-export-button" onClick={syncForCodex}>
+                  <Save size={17} />
+                  导出全站数据
+                </button>
+                {syncMessage && <p className="sync-message compact-sync">{syncMessage}</p>}
+              </section>
+              <section className="toolbox-section">
+                <div className="section-head compact">
+                  <h2>刚完成</h2>
+                  <CheckCircle2 size={16} />
+                </div>
+                <div className="session-list">
+                  {recentDoneTasks.length === 0 && <p className="empty">完成后的任务会留在这里。</p>}
+                  {recentDoneTasks.map((task) => (
+                    <article key={task.id}>
+                      <strong>{task.title}</strong>
+                      <span>{taskScopeLabels[task.scope]}</span>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </details>
           </aside>
         </section>
         </>
@@ -1493,8 +1529,12 @@ export function App() {
 
       {activeSection === "study" && (
         <>
-      <section className="dashboard-grid">
-        <section className="timer-panel">
+      <section className="study-block start-study-block">
+        <div className="study-block-head">
+          <p>开始学习</p>
+          <span>选择科目，开始一轮真实投入</span>
+        </div>
+        <section className={`timer-panel ${running ? "timer-running" : ""}`}>
           <div className="timer-ring" style={{ "--progress": `${Math.min(100, elapsedSeconds / 72)}%` } as React.CSSProperties}>
             <div>
               <span>{selectedSubjectConfig.name}</span>
@@ -1507,6 +1547,7 @@ export function App() {
               {subjects.map((subject) => (
                 <button
                   className={subject.id === selectedSubject ? "active" : ""}
+                  disabled={running}
                   key={subject.id}
                   onClick={() => setSelectedSubject(subject.id)}
                   type="button"
@@ -1539,6 +1580,13 @@ export function App() {
           </div>
         </section>
 
+      </section>
+
+      <section className="study-block today-study-block">
+        <div className="study-block-head">
+          <p>今日记录</p>
+          <span>看今天的结构，顺手补一句进度</span>
+        </div>
         <section className="stats-panel">
           <article>
             <span>今日已专注</span>
@@ -1556,7 +1604,6 @@ export function App() {
             <small>数据结构、计组、操作系统、计网合计</small>
           </article>
         </section>
-      </section>
 
       <section className="subject-panel">
         <div className="section-head">
@@ -1622,18 +1669,29 @@ export function App() {
             <Upload size={17} />
             {cloudBusy ? "同步中" : "同步完成"}
           </button>
-          <button className="secondary-button" onClick={exportData}>
-            <Download size={17} />
-            导出
-          </button>
-          <button className="secondary-button" onClick={() => fileInput.current?.click()}>
-            <Upload size={17} />
-            导入
-          </button>
+          <details className="data-tools">
+            <summary>数据与同步</summary>
+            <div className="data-actions">
+              <button className="secondary-button" onClick={exportData}>
+                <Download size={17} />
+                导出
+              </button>
+              <button className="secondary-button" onClick={() => fileInput.current?.click()}>
+                <Upload size={17} />
+                导入
+              </button>
+            </div>
+          </details>
           <input ref={fileInput} className="hidden" type="file" accept="application/json" onChange={importData} />
         </div>
       </section>
+      </section>
 
+      <section className="study-block review-study-block">
+        <div className="study-block-head">
+          <p>回顾</p>
+          <span>日历、单日明细和本月累计</span>
+        </div>
       <section className="content-grid">
         <section className="calendar-panel">
           <div className="section-head">
@@ -1671,7 +1729,7 @@ export function App() {
                   title={`${key}: ${formatDuration(seconds)}`}
                 >
                   <strong>{day.getDate()}</strong>
-                  <span>{seconds ? `${Math.round(seconds / 3600)}h` : ""}</span>
+                  <span>{seconds ? formatCalendarDuration(seconds) : ""}</span>
                 </button>
               );
             })}
@@ -1694,13 +1752,47 @@ export function App() {
             </div>
             <div className="session-list day-progress-list">
               {selectedDayProgress.length === 0 && <p className="empty">这天没有进度记录。</p>}
-              {selectedDayProgress.map((entry) => (
-                <article key={entry.id}>
-                  <strong>{entry.area === "math" ? "数学" : "408"}</strong>
-                  <span>{entry.content}</span>
-                  {entry.note && <p>{entry.note}</p>}
-                </article>
-              ))}
+              {selectedDayProgress.map((entry) => {
+                const isEditing = editingProgressId === entry.id;
+                return (
+                  <article className="session-record" key={entry.id}>
+                    {isEditing ? (
+                      <div className="inline-editor">
+                        <input
+                          value={progressEditDraft}
+                          onChange={(event) => setProgressEditDraft(event.target.value)}
+                          placeholder="记录今天学到哪里"
+                        />
+                        <div className="inline-actions">
+                          <button className="secondary-button" onClick={saveProgressEdit}>
+                            <Save size={16} />
+                            保存
+                          </button>
+                          <button className="icon-button" onClick={() => setEditingProgressId(null)} title="取消">
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="item-main">
+                          <strong>{entry.area === "math" ? "数学" : "408"}</strong>
+                          <span>{entry.content}</span>
+                          {entry.note && <p>{entry.note}</p>}
+                        </div>
+                        <div className="item-actions">
+                          <button className="icon-button" onClick={() => startEditProgress(entry)} title="编辑进度">
+                            <Pencil size={16} />
+                          </button>
+                          <button className="icon-button danger" onClick={() => deleteProgress(entry.id)} title="删除进度">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           </section>
 
@@ -1719,30 +1811,8 @@ export function App() {
             </div>
           </section>
 
-          <section className="history-panel">
-            <div className="section-head compact">
-              <h2>最近记录</h2>
-              <Square size={16} />
-            </div>
-            <div className="session-list">
-              {recentSessions.length === 0 && <p className="empty">还没有记录。开始第一轮专注吧。</p>}
-              {recentSessions.map((session) => (
-                <article className="session-record" key={session.id}>
-                  <div className="item-main">
-                    <strong>{formatDuration(session.seconds)}</strong>
-                    <span>
-                      {session.date} · {subjectById[session.subject].name}
-                    </span>
-                    {session.note && <p>{session.note}</p>}
-                  </div>
-                  <button className="icon-button danger" onClick={() => deleteSession(session.id)} title="删除记录">
-                    <Trash2 size={16} />
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
         </aside>
+      </section>
       </section>
         </>
       )}
