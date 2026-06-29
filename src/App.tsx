@@ -48,6 +48,17 @@ type SubjectConfig = {
   color: string;
 };
 
+type ScoreTarget = {
+  subject: string;
+  score: number;
+  note: string;
+};
+
+type MilestoneTarget = {
+  date: string;
+  target: string;
+};
+
 type FocusSession = {
   id: string;
   date: string;
@@ -156,6 +167,31 @@ const subjectById = Object.fromEntries(subjects.map((subject) => [subject.id, su
   SubjectId,
   SubjectConfig
 >;
+
+const examTarget = {
+  school: "同济大学",
+  college: "计算机科学与技术学院（软件学院）",
+  primaryProgram: "085404 计算机技术（专硕）",
+  backupProgram: "085405 软件工程（专硕）",
+  exam: "101 政治 / 201 英语一 / 301 数学一 / 408 计算机学科专业基础",
+  totalScore: 380,
+  bottomLine: 340,
+  strategy: "就业优先，先按同济计科软院专硕准备；9 月后再根据模考成绩决定是否调整。",
+};
+
+const scoreTargets: ScoreTarget[] = [
+  { subject: "政治", score: 65, note: "后期拿分，别过早抢数学和 408 时间" },
+  { subject: "英语一", score: 75, note: "稳定盘，尽量守住 70+" },
+  { subject: "数学一", score: 125, note: "主战场，决定总分上限" },
+  { subject: "408", score: 115, note: "当前最大风险，7 月必须启动" },
+];
+
+const milestoneTargets: MilestoneTarget[] = [
+  { date: "7 月底", target: "408 完成数据结构和计组主体，数学恢复稳定做题强度" },
+  { date: "8 月底", target: "408 四科一轮结束，数学能稳定 100+" },
+  { date: "9 月中", target: "408 模考 95+，数学 115+，确认同济目标是否稳" },
+  { date: "10 月", target: "408 冲 105-115，数学冲 120-125，报名目标最终确认" },
+];
 
 const defaultData: KaiData = {
   sessions: [],
@@ -442,6 +478,25 @@ function buildCodexSummary(data: KaiData) {
     "",
     `- Math: ${latestMath ? `${latestMath.content} (${latestMath.date})` : "not recorded"}`,
     `- 408: ${latest408 ? `${latest408.content} (${latest408.date})` : "not recorded"}`,
+    "",
+    "## Exam Target",
+    "",
+    `- School: ${examTarget.school}`,
+    `- College: ${examTarget.college}`,
+    `- Primary program: ${examTarget.primaryProgram}`,
+    `- Backup program: ${examTarget.backupProgram}`,
+    `- Exam subjects: ${examTarget.exam}`,
+    `- Target total score: ${examTarget.totalScore}`,
+    `- Official 2026 re-exam bottom line referenced for planning: ${examTarget.bottomLine}`,
+    `- Planning strategy: ${examTarget.strategy}`,
+    "",
+    "## Score Targets",
+    "",
+    ...scoreTargets.map((target) => `- ${target.subject}: ${target.score} (${target.note})`),
+    "",
+    "## Milestone Targets",
+    "",
+    ...milestoneTargets.map((target) => `- ${target.date}: ${target.target}`),
     "",
     "## Recent Progress Entries",
     "",
@@ -1580,6 +1635,53 @@ export function App() {
           </div>
         </section>
 
+      </section>
+
+      <section className="study-block target-study-block">
+        <div className="study-block-head">
+          <p>考研目标</p>
+          <span>主目标固定住，计划按 380 分倒推</span>
+        </div>
+        <section className="target-panel">
+          <div className="target-main">
+            <span className="target-label">主目标</span>
+            <h2>{examTarget.school} · {examTarget.primaryProgram}</h2>
+            <p>{examTarget.college}</p>
+            <div className="target-meta">
+              <span>备选：{examTarget.backupProgram}</span>
+              <span>科目：{examTarget.exam}</span>
+            </div>
+          </div>
+          <aside className="target-score">
+            <span>目标总分</span>
+            <strong>{examTarget.totalScore}</strong>
+            <small>复试线参考 {examTarget.bottomLine}，按更稳的 380 规划</small>
+          </aside>
+          <div className="score-grid">
+            {scoreTargets.map((target) => (
+              <article key={target.subject}>
+                <span>{target.subject}</span>
+                <strong>{target.score}</strong>
+                <small>{target.note}</small>
+              </article>
+            ))}
+          </div>
+          <div className="target-strategy">
+            <strong>当前策略</strong>
+            <p>{examTarget.strategy}</p>
+          </div>
+          <details className="milestone-details">
+            <summary>阶段判断线</summary>
+            <div className="milestone-list">
+              {milestoneTargets.map((target) => (
+                <article key={target.date}>
+                  <span>{target.date}</span>
+                  <p>{target.target}</p>
+                </article>
+              ))}
+            </div>
+          </details>
+        </section>
       </section>
 
       <section className="study-block today-study-block">
